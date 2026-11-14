@@ -1,0 +1,9 @@
+.build/
+build/
+.swiftpm/
+*.xcodeproj/
+.DS_Store
+.claude/settings.local.json
+.claude/hooks/
+.claude/worktrees/
+vendor/
