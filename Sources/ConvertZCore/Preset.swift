@@ -58,6 +58,8 @@ public enum Preset: String, CaseIterable, Codable, Identifiable, Sendable {
     public var hasQuality: Bool { self == .premiereMP4 || self == .hevcMP4 || self == .webm }
     public var hasEncoderChoice: Bool { self == .premiereMP4 || self == .hevcMP4 }
     public var hasVideoShape: Bool { [.premiereMP4, .prores, .hevcMP4, .webm].contains(self) }
+    /// Presets that can pass a stream through untouched when it is already in the target format.
+    public var canKeepStreams: Bool { [.premiereMP4, .mp3, .m4a].contains(self) }
 }
 
 public enum Quality: String, CaseIterable, Codable, Identifiable, Sendable {
@@ -117,8 +119,12 @@ public struct Options: Codable, Equatable, Sendable {
     public var frameRate: String?
     public var proresProfile: ProResProfile = .standard
     public var mp3Bitrate: Int = 320
-    public var wavBitDepth: Int = 16
-    public var wavSampleRate: Int = 48000
+    /// 0 keeps the source's depth (24-bit for lossless sources deeper than 16 bits, otherwise 16-bit).
+    public var wavBitDepth: Int = 0
+    /// 0 keeps the source's sample rate.
+    public var wavSampleRate: Int = 0
+    /// Copy video or audio untouched when it is already in the target format, instead of re-encoding it.
+    public var keepCompatibleStreams: Bool = true
 
     public init() {}
 

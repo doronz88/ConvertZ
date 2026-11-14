@@ -127,11 +127,11 @@ public enum Prober {
         return info
     }
 
-    /// Reads the frame timestamps of the first 30 seconds (packet headers only, so it is quick).
+    /// Reads the frame timestamps of the first two minutes (packet headers only, so it is quick).
     static func measureTiming(_ file: URL, stream: Int, ffprobe: URL) -> FrameTiming? {
         let process = Process()
         process.executableURL = ffprobe
-        process.arguments = ["-v", "error", "-select_streams", "\(stream)", "-read_intervals", "%+30",
+        process.arguments = ["-v", "error", "-select_streams", "\(stream)", "-read_intervals", "%+120",
                              "-show_entries", "packet=pts_time", "-of", "csv=p=0", file.path]
         let out = Pipe()
         process.standardOutput = out

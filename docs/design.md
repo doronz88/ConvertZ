@@ -130,6 +130,18 @@ Premiere-safe MP4 rules (the heart of the app):
 - Colour tags (primaries/transfer/matrix) carried over for SDR sources.
 - Source metadata (creation date) carried over.
 
+## Keeping quality (added after the first release, at the owner's request)
+
+- Premiere-safe MP4 copies the video untouched when it is already H.264 (8-bit 4:2:0) or HEVC with a constant
+  frame rate, even dimensions, no interlacing and no resolution or frame-rate change requested, **and** the file
+  has some other diagnosed problem (container or audio) that explains the conversion. A file with no diagnosed
+  problem is always re-encoded in full, because its fault is hidden and a copy would carry it over.
+- Audio that is already AAC is copied into MP4/M4A; MP3 is copied into MP3.
+- If a conversion that copied a stream fails or fails verification, it is retried with full re-encoding.
+- One option, on by default, turns all of this off ("Don't re-encode what is already compatible").
+- Re-encoding defaults are visually lossless: x264 CRF 16, AAC 320k for stereo and proportionally more for
+  surround, Lanczos when scaling down. WAV keeps the source's bit depth and sample rate unless told otherwise.
+
 ## Diagnosis
 
 Probe every added file with ffprobe (JSON). Flag, in plain words:

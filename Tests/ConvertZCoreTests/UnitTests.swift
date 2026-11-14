@@ -68,7 +68,7 @@ final class UnitTests: XCTestCase {
         let a = try CommandBuilder.arguments(preset: .premiereMP4, options: Options(), info: phoneVFR, input: "in.mkv", output: "out.mp4")
         XCTAssertEqual(a, ["-hide_banner", "-nostdin", "-y", "-i", "in.mkv", "-map", "0:0", "-map", "0:a?", "-sn", "-dn",
                            "-map_metadata", "0", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=30000/1001,format=yuv420p",
-                           "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-profile:v", "high", "-pix_fmt", "yuv420p",
+                           "-c:v", "libx264", "-preset", "medium", "-crf", "16", "-profile:v", "high", "-pix_fmt", "yuv420p",
                            "-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-movflags", "+faststart",
                            "-progress", "pipe:1", "-nostats", "out.mp4"])
     }
@@ -83,7 +83,7 @@ final class UnitTests: XCTestCase {
         XCTAssertTrue(a.contains("h264_videotoolbox"))
         XCTAssertFalse(a.contains("aac"))
         XCTAssertEqual(a[a.firstIndex(of: "-vf")! + 1],
-                       "bwdif=mode=send_frame:parity=auto:deint=all,scale=-2:'trunc(min(ih,720)/2)*2',fps=25,format=yuv420p")
+                       "bwdif=mode=send_frame:parity=auto:deint=all,scale=-2:'trunc(min(ih,720)/2)*2':flags=lanczos,fps=25,format=yuv420p")
     }
 
     func testAudioArguments() throws {
@@ -92,6 +92,51 @@ final class UnitTests: XCTestCase {
         var o = Options(); o.wavBitDepth = 24; o.wavSampleRate = 44100
         let wav = try CommandBuilder.arguments(preset: .wav, options: o, info: clean, input: "i", output: "o.wav")
         XCTAssertTrue(wav.contains("pcm_s24le") && wav.contains("44100") && wav.contains("0:1"))
+    }
+
+    func testKeepsCompatibleStreams() throws {
+        // OBS-style recording: fine H.264 and AAC, but in MKV. Nothing needs re-encoding.
+        var obs = clean
+        obs.formatName = "matroska,webm"
+        XCTAssertTrue(CommandBuilder.keepsVideo(preset: .premiereMP4, options: Options(), info: obs))
+        let a = try CommandBuilder.arguments(preset: .premiereMP4, options: Options(), info: obs, input: "i", output: "o.mp4")
+        XCTAssertTrue(a.contains("-c:v") && a[a.firstIndex(of: "-c:v")! + 1] == "copy")
+        XCTAssertEqual(a[a.firstIndex(of: "-c:a")! + 1], "copy")
+        XCTAssertFalse(a.contains("-vf"))
+
+        // Same video with Opus audio: copy the video, convert only the audio.
+        obs.audio = [.init(index: 1, codec: "opus", sampleRate: 48000, channels: 6)]
+        let b = try CommandBuilder.arguments(preset: .premiereMP4, options: Options(), info: obs, input: "i", output: "o.mp4")
+        XCTAssertEqual(b[b.firstIndex(of: "-c:v")! + 1], "copy")
+        XCTAssertEqual(b[b.firstIndex(of: "-c:a")! + 1], "aac")
+        XCTAssertEqual(b[b.firstIndex(of: "-b:a")! + 1], "960k")
+
+        // Not kept: a file with no visible problem (its fault is hidden), a variable frame rate, a requested
+        // change, or the option switched off.
+        XCTAssertFalse(CommandBuilder.keepsVideo(preset: .premiereMP4, options: Options(), info: clean))
+        XCTAssertFalse(CommandBuilder.keepsVideo(preset: .premiereMP4, options: Options(), info: phoneVFR))
+        var measured = obs; measured.video?.measuredVariable = true
+        XCTAssertFalse(CommandBuilder.keepsVideo(preset: .premiereMP4, options: Options(), info: measured))
+        var o = Options(); o.frameRate = "25"
+        XCTAssertFalse(CommandBuilder.keepsVideo(preset: .premiereMP4, options: o, info: obs))
+        o = Options(); o.maxHeight = 720
+        XCTAssertFalse(CommandBuilder.keepsVideo(preset: .premiereMP4, options: o, info: obs))
+        o = Options(); o.keepCompatibleStreams = false
+        XCTAssertFalse(CommandBuilder.keepsVideo(preset: .premiereMP4, options: o, info: obs))
+        XCTAssertFalse(CommandBuilder.keepsVideo(preset: .hevcMP4, options: Options(), info: obs))
+    }
+
+    func testAudioKeepsQuality() throws {
+        let aacFile = MediaInfo(formatName: "aac", duration: 5, audio: [.init(index: 0, codec: "aac", sampleRate: 44100, channels: 2)])
+        let m4a = try CommandBuilder.arguments(preset: .m4a, options: Options(), info: aacFile, input: "i", output: "o.m4a")
+        XCTAssertEqual(m4a[m4a.firstIndex(of: "-c:a")! + 1], "copy")
+        var hires = song
+        hires.audio[0].bitsPerSample = 24
+        let wav = try CommandBuilder.arguments(preset: .wav, options: Options(), info: hires, input: "i", output: "o.wav")
+        XCTAssertTrue(wav.contains("pcm_s24le"))
+        XCTAssertFalse(wav.contains("-ar"), "sample rate is left as the source's")
+        let fromLossy = try CommandBuilder.arguments(preset: .wav, options: Options(), info: aacFile, input: "i", output: "o.wav")
+        XCTAssertTrue(fromLossy.contains("pcm_s16le"))
     }
 
     func testWrongKindOfFile() {

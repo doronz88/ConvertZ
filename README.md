@@ -12,6 +12,10 @@ audio), without having to remember ffmpeg flags.
 - Tells you, per file, what Premiere is likely to object to: variable frame rate, MKV/WebM containers, Opus audio,
   10-bit H.264, AV1/VP9, odd dimensions and so on.
 - **Premiere-safe MP4** (the default) re-encodes to H.264, 8-bit 4:2:0, constant frame rate, AAC 48 kHz.
+- **Keeps as much quality as it can.** Video or audio that is already fine is copied untouched rather than
+  re-encoded: an OBS recording in MKV, for example, becomes an MP4 with bit-for-bit the same picture. Only the
+  parts that are the problem get converted, and those at visually lossless settings by default. If a copy turns
+  out not to work, the file is re-encoded automatically.
 - Converts a whole queue, with progress, time remaining and cancel.
 - Never overwrites or deletes your original. Unfinished files are removed, never left looking complete.
 - Checks every converted file by reading it back before calling it done.
@@ -19,12 +23,12 @@ audio), without having to remember ffmpeg flags.
 
 | Format | What you get |
 |---|---|
-| Premiere-safe MP4 | H.264, constant frame rate, AAC. Options: quality, hardware encoder, resolution, frame rate |
+| Premiere-safe MP4 | H.264, constant frame rate, AAC. Options: quality, hardware encoder, resolution, frame rate. 8-bit: for 10-bit or HDR footage use ProRes, which keeps the extra depth |
 | ProRes MOV | ProRes Proxy / LT / 422 / HQ with uncompressed audio, for smooth editing |
 | Rewrap to MP4 | Same video and audio moved into an MP4, instantly and without quality loss |
 | H.265 MP4 | Small files for sharing |
 | WebM, GIF | For the web |
-| MP3, WAV, M4A, FLAC | Audio, including the audio track of a video |
+| MP3, WAV, M4A, FLAC | Audio, including the audio track of a video. WAV keeps the source's bit depth and sample rate; MP3 and AAC sources are not compressed twice |
 
 ## Install
 

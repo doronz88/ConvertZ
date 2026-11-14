@@ -56,10 +56,15 @@ public struct MediaInfo: Equatable, Sendable {
         public var codec: String
         public var sampleRate: Int?
         public var channels: Int?
+        /// Bits per sample for lossless sources (PCM, FLAC, ALAC); nil when unknown or lossy.
+        public var bitsPerSample: Int?
 
-        public init(index: Int, codec: String, sampleRate: Int? = nil, channels: Int? = nil) {
+        public init(index: Int, codec: String, sampleRate: Int? = nil, channels: Int? = nil, bitsPerSample: Int? = nil) {
             self.index = index; self.codec = codec; self.sampleRate = sampleRate; self.channels = channels
+            self.bitsPerSample = bitsPerSample
         }
+
+        public var isLossless: Bool { codec.hasPrefix("pcm_") || ["flac", "alac", "wavpack", "ape", "tta"].contains(codec) }
     }
 
     public var formatName: String
@@ -97,7 +102,13 @@ public struct MediaInfo: Equatable, Sendable {
                               realFrameRate: rate(s["r_frame_rate"]), averageFrameRate: rate(s["avg_frame_rate"]),
                               fieldOrder: s["field_order"] as? String, colorTransfer: s["color_transfer"] as? String)
             case "audio":
-                audio.append(Audio(index: index, codec: codec, sampleRate: int(s["sample_rate"]), channels: int(s["channels"])))
+                var bits = int(s["bits_per_raw_sample"]) ?? 0
+                if bits == 0 { bits = int(s["bits_per_sample"]) ?? 0 }
+                if bits == 0, let fmt = s["sample_fmt"] as? String {
+                    bits = fmt.hasPrefix("s16") ? 16 : (fmt.hasPrefix("s32") || fmt.hasPrefix("flt") || fmt.hasPrefix("dbl")) ? 24 : 0
+                }
+                audio.append(Audio(index: index, codec: codec, sampleRate: int(s["sample_rate"]), channels: int(s["channels"]),
+                                   bitsPerSample: bits > 0 ? bits : nil))
             default:
                 break
             }

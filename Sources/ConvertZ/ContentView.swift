@@ -301,16 +301,25 @@ struct OptionsView: View {
                 }
                 if preset == .wav {
                     Picker("Bit depth", selection: $model.options.wavBitDepth) {
+                        Text("Match source").tag(0)
                         Text("16-bit").tag(16)
                         Text("24-bit").tag(24)
                     }
                     Picker("Sample rate", selection: $model.options.wavSampleRate) {
+                        Text("Match source").tag(0)
                         Text("48 kHz").tag(48000)
                         Text("44.1 kHz").tag(44100)
                     }
                 }
             }
-            if !(preset.hasQuality || preset.hasVideoShape || preset == .mp3 || preset == .wav) {
+            if preset.canKeepStreams {
+                Toggle("Don't re-encode what is already compatible", isOn: $model.options.keepCompatibleStreams)
+                Text(preset == .premiereMP4
+                     ? "Video or audio that Premiere already reads is copied untouched, with no quality loss, when the problem is elsewhere in the file. Turn off to always re-encode."
+                     : "Audio already in this format is copied untouched instead of being compressed a second time.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if !(preset.hasQuality || preset.hasVideoShape || preset == .mp3 || preset == .wav || preset.canKeepStreams) {
                 Text("This format has no options.").foregroundStyle(.secondary)
             }
             if preset.hasVideoShape {

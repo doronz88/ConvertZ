@@ -257,23 +257,34 @@ final class AppModel {
                 self.finishQueue()
             } else if outcome.exitCode != 0 {
                 try? fm.removeItem(at: partial)
-                if options.encoder == .fast, preset.hasEncoderChoice, !isRetry {
-                    // The hardware encoder rejects some sizes and formats; the software one takes anything.
-                    var software = options
-                    software.encoder = .best
-                    self.start(job, options: software, isRetry: true)
+                if let safer = Self.saferOptions(options, preset: preset) {
+                    self.start(job, options: safer, isRetry: true)
                 } else {
                     job.state = .failed(ErrorMapper.reason(log: outcome.log))
                     self.runNext()
                 }
             } else {
-                self.verify(job, partial: partial, final: final, preset: preset, sourceDuration: info.duration, ffprobe: tools.ffprobe)
+                self.verify(job, partial: partial, final: final, preset: preset, options: options, sourceDuration: info.duration, ffprobe: tools.ffprobe)
             }
         })
     }
 
     /// ffmpeg exiting cleanly is not enough: the output must probe as valid media of about the right length.
-    private func verify(_ job: Job, partial: URL, final: URL, preset: Preset, sourceDuration: Double?, ffprobe: URL) {
+    /// What to try next when a conversion fails: first stop copying streams, then drop the hardware encoder.
+    /// Re-encoding in software accepts anything, so it is the last resort.
+    static func saferOptions(_ options: Options, preset: Preset) -> Options? {
+        var next = options
+        if options.keepCompatibleStreams, preset.canKeepStreams {
+            next.keepCompatibleStreams = false
+        } else if options.encoder == .fast, preset.hasEncoderChoice {
+            next.encoder = .best
+        } else {
+            return nil
+        }
+        return next
+    }
+
+    private func verify(_ job: Job, partial: URL, final: URL, preset: Preset, options: Options, sourceDuration: Double?, ffprobe: URL) {
         DispatchQueue.global(qos: .userInitiated).async {
             let probed = try? Prober.probe(partial, ffprobe: ffprobe)
             DispatchQueue.main.async {
@@ -303,6 +314,10 @@ final class AppModel {
                 }
                 if let problem {
                     try? fm.removeItem(at: partial)
+                    if let safer = Self.saferOptions(options, preset: preset) {
+                        self.start(job, options: safer, isRetry: true)
+                        return
+                    }
                     job.state = .failed(problem)
                 }
                 self.currentPartial = nil

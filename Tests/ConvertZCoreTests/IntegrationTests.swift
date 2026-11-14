@@ -100,12 +100,42 @@ final class IntegrationTests: XCTestCase {
         XCTAssertEqual(rewrapped.audio.first?.codec, "aac")
     }
 
+    func testCompatibleVideoIsCopiedNotReencoded() throws {
+        // An OBS-style MKV: good H.264, but Opus audio in a container Premiere can't open.
+        let src = try make("obs.mkv", ["-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30:duration=3"] + tone + [
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "libopus"])
+        let before = try Prober.probe(src, ffprobe: try tools().ffprobe)
+        XCTAssertEqual(before.video?.isVariableFrameRate, false)
+        XCTAssertTrue(CommandBuilder.keepsVideo(preset: .premiereMP4, options: Options(), info: before))
+        let after = try convert(src, .premiereMP4)
+        XCTAssertEqual(after.video?.codec, "h264")
+        XCTAssertEqual(after.audio.first?.codec, "aac")
+        XCTAssertEqual(Diagnosis.issues(for: after), [])
+        XCTAssertEqual(after.duration ?? 0, 3, accuracy: 0.3)
+        // Bit-for-bit copy: the video stream's checksum is unchanged.
+        func videoHash(_ url: URL) throws -> String {
+            let p = Process()
+            p.executableURL = try tools().ffmpeg
+            p.arguments = ["-v", "error", "-i", url.path, "-map", "0:v:0", "-c", "copy", "-f", "hash", "-"]
+            let out = Pipe()
+            p.standardOutput = out
+            p.standardError = FileHandle.nullDevice
+            try p.run()
+            let text = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            p.waitUntilExit()
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let out = Self.dir.appendingPathComponent("obs.mp4")
+        XCTAssertFalse(try videoHash(src).isEmpty)
+        XCTAssertEqual(try videoHash(src), try videoHash(out))
+    }
+
     func testAudioPresets() throws {
         let src = try make("song.flac", ["-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=44100"])
         XCTAssertEqual(try convert(src, .mp3).audio.first?.codec, "mp3")
         let wav = try convert(src, .wav)
         XCTAssertEqual(wav.audio.first?.codec, "pcm_s16le")
-        XCTAssertEqual(wav.audio.first?.sampleRate, 48000)
+        XCTAssertEqual(wav.audio.first?.sampleRate, 44100, "WAV keeps the source's sample rate")
         XCTAssertEqual(try convert(src, .m4a).audio.first?.codec, "aac")
         // Audio out of a video file.
         let video = try make("withsound.mkv", ["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=2"] + tone + [
