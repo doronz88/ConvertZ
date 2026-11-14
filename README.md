@@ -14,8 +14,11 @@ audio), without having to remember ffmpeg flags.
 - **Premiere-safe MP4** (the default) re-encodes to H.264, 8-bit 4:2:0, constant frame rate, AAC 48 kHz.
 - **Keeps as much quality as it can.** Video or audio that is already fine is copied untouched rather than
   re-encoded: an OBS recording in MKV, for example, becomes an MP4 with bit-for-bit the same picture. Only the
-  parts that are the problem get converted, and those at visually lossless settings by default. If a copy turns
-  out not to work, the file is re-encoded automatically.
+  parts that are the problem get converted, and those at visually lossless settings by default.
+- **Importing cleanly comes first.** Video is only copied when it is plain 8-bit H.264 and every frame's timing
+  has been checked and found constant; anything in doubt is re-encoded, as is any file with no visible problem.
+  If a copy turns out not to work, the file is re-encoded automatically, and one switch in Options turns copying
+  off altogether.
 - Converts a whole queue, with progress, time remaining and cancel.
 - Never overwrites or deletes your original. Unfinished files are removed, never left looking complete.
 - Checks every converted file by reading it back before calling it done.

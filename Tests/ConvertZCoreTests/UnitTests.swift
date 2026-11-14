@@ -10,7 +10,7 @@ final class UnitTests: XCTestCase {
     let clean = MediaInfo(formatName: "mov,mp4,m4a,3gp,3g2,mj2", duration: 10,
                           video: .init(index: 0, codec: "h264", width: 1920, height: 1080, pixelFormat: "yuv420p",
                                        realFrameRate: 30, averageFrameRate: 30),
-                          audio: [.init(index: 1, codec: "aac", sampleRate: 48000, channels: 2)])
+                          audio: [.init(index: 1, codec: "aac", sampleRate: 48000, channels: 2, profile: "LC")])
     let song = MediaInfo(formatName: "flac", duration: 200, audio: [.init(index: 0, codec: "flac", sampleRate: 96000, channels: 6)])
 
     func testFrameRateSnapping() {
@@ -98,6 +98,8 @@ final class UnitTests: XCTestCase {
         // OBS-style recording: fine H.264 and AAC, but in MKV. Nothing needs re-encoding.
         var obs = clean
         obs.formatName = "matroska,webm"
+        obs.video?.measuredVariable = false
+        obs.video?.timingCoversWholeFile = true
         XCTAssertTrue(CommandBuilder.keepsVideo(preset: .premiereMP4, options: Options(), info: obs))
         let a = try CommandBuilder.arguments(preset: .premiereMP4, options: Options(), info: obs, input: "i", output: "o.mp4")
         XCTAssertTrue(a.contains("-c:v") && a[a.firstIndex(of: "-c:v")! + 1] == "copy")
@@ -124,10 +126,23 @@ final class UnitTests: XCTestCase {
         o = Options(); o.keepCompatibleStreams = false
         XCTAssertFalse(CommandBuilder.keepsVideo(preset: .premiereMP4, options: o, info: obs))
         XCTAssertFalse(CommandBuilder.keepsVideo(preset: .hevcMP4, options: Options(), info: obs))
+        // Importing cleanly beats saving a re-encode: anything in doubt is not copied.
+        var unmeasured = obs; unmeasured.video?.measuredVariable = nil
+        XCTAssertFalse(CommandBuilder.keepsVideo(preset: .premiereMP4, options: Options(), info: unmeasured))
+        var partial = obs; partial.video?.timingCoversWholeFile = false
+        XCTAssertFalse(CommandBuilder.keepsVideo(preset: .premiereMP4, options: Options(), info: partial))
+        var hevc = obs; hevc.video?.codec = "hevc"
+        XCTAssertFalse(CommandBuilder.keepsVideo(preset: .premiereMP4, options: Options(), info: hevc))
+        var late = obs; late.startTime = 1.4
+        XCTAssertFalse(CommandBuilder.keepsVideo(preset: .premiereMP4, options: Options(), info: late))
+        // HE-AAC or surround AAC is re-encoded rather than passed through.
+        var heaac = obs; heaac.audio = [.init(index: 1, codec: "aac", sampleRate: 48000, channels: 2, profile: "HE-AAC")]
+        let c = try CommandBuilder.arguments(preset: .premiereMP4, options: Options(), info: heaac, input: "i", output: "o.mp4")
+        XCTAssertEqual(c[c.firstIndex(of: "-c:a")! + 1], "aac")
     }
 
     func testAudioKeepsQuality() throws {
-        let aacFile = MediaInfo(formatName: "aac", duration: 5, audio: [.init(index: 0, codec: "aac", sampleRate: 44100, channels: 2)])
+        let aacFile = MediaInfo(formatName: "aac", duration: 5, audio: [.init(index: 0, codec: "aac", sampleRate: 44100, channels: 2, profile: "LC")])
         let m4a = try CommandBuilder.arguments(preset: .m4a, options: Options(), info: aacFile, input: "i", output: "o.m4a")
         XCTAssertEqual(m4a[m4a.firstIndex(of: "-c:a")! + 1], "copy")
         var hires = song

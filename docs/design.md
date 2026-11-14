@@ -132,11 +132,15 @@ Premiere-safe MP4 rules (the heart of the app):
 
 ## Keeping quality (added after the first release, at the owner's request)
 
-- Premiere-safe MP4 copies the video untouched when it is already H.264 (8-bit 4:2:0) or HEVC with a constant
-  frame rate, even dimensions, no interlacing and no resolution or frame-rate change requested, **and** the file
+- Importing cleanly in Premiere outranks avoiding a re-encode: the copy rules are strict and anything in doubt
+  is re-encoded.
+- Premiere-safe MP4 copies the video untouched when it is already H.264 (8-bit 4:2:0) whose frame timing has
+  been measured across the whole file and found constant, starting at zero, with even dimensions, no
+  interlacing and no resolution or frame-rate change requested, **and** the file
   has some other diagnosed problem (container or audio) that explains the conversion. A file with no diagnosed
   problem is always re-encoded in full, because its fault is hidden and a copy would carry it over.
-- Audio that is already AAC is copied into MP4/M4A; MP3 is copied into MP3.
+- Audio that is already plain AAC-LC (44.1/48 kHz, mono or stereo) is copied into MP4; AAC-LC into M4A; MP3
+  into MP3.
 - If a conversion that copied a stream fails or fails verification, it is retried with full re-encoding.
 - One option, on by default, turns all of this off ("Don't re-encode what is already compatible").
 - Re-encoding defaults are visually lossless: x264 CRF 16, AAC 320k for stereo and proportionally more for

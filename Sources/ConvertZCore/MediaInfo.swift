@@ -14,6 +14,8 @@ public struct MediaInfo: Equatable, Sendable {
         public var colorTransfer: String?
         /// Set from actual frame timestamps when they were measured; headers alone miss variable frame rate in MKV.
         public var measuredVariable: Bool?
+        /// True when that measurement read every frame of the file rather than just its first two minutes.
+        public var timingCoversWholeFile = false
 
         public init(index: Int, codec: String, width: Int, height: Int, pixelFormat: String? = nil,
                     realFrameRate: Double? = nil, averageFrameRate: Double? = nil, fieldOrder: String? = nil,
@@ -58,16 +60,26 @@ public struct MediaInfo: Equatable, Sendable {
         public var channels: Int?
         /// Bits per sample for lossless sources (PCM, FLAC, ALAC); nil when unknown or lossy.
         public var bitsPerSample: Int?
+        /// Codec profile as ffprobe names it, e.g. "LC" or "HE-AAC".
+        public var profile: String?
 
-        public init(index: Int, codec: String, sampleRate: Int? = nil, channels: Int? = nil, bitsPerSample: Int? = nil) {
+        public init(index: Int, codec: String, sampleRate: Int? = nil, channels: Int? = nil, bitsPerSample: Int? = nil,
+                    profile: String? = nil) {
             self.index = index; self.codec = codec; self.sampleRate = sampleRate; self.channels = channels
-            self.bitsPerSample = bitsPerSample
+            self.bitsPerSample = bitsPerSample; self.profile = profile
+        }
+
+        /// Plain AAC-LC at 44.1 or 48 kHz, mono or stereo: the only AAC that is safe to hand Premiere as-is.
+        public var isPremiereSafeAAC: Bool {
+            codec == "aac" && profile == "LC" && [44100, 48000].contains(sampleRate ?? 0) && (1...2).contains(channels ?? 0)
         }
 
         public var isLossless: Bool { codec.hasPrefix("pcm_") || ["flac", "alac", "wavpack", "ape", "tta"].contains(codec) }
     }
 
     public var formatName: String
+    /// Timestamp of the first frame; files that do not start near zero are not safe to copy streams from.
+    public var startTime: Double?
     public var duration: Double?
     public var video: Video?
     public var audio: [Audio]
@@ -108,7 +120,7 @@ public struct MediaInfo: Equatable, Sendable {
                     bits = fmt.hasPrefix("s16") ? 16 : (fmt.hasPrefix("s32") || fmt.hasPrefix("flt") || fmt.hasPrefix("dbl")) ? 24 : 0
                 }
                 audio.append(Audio(index: index, codec: codec, sampleRate: int(s["sample_rate"]), channels: int(s["channels"]),
-                                   bitsPerSample: bits > 0 ? bits : nil))
+                                   bitsPerSample: bits > 0 ? bits : nil, profile: s["profile"] as? String))
             default:
                 break
             }
@@ -116,7 +128,9 @@ public struct MediaInfo: Equatable, Sendable {
         guard video != nil || !audio.isEmpty else { throw ParseError.notMedia }
         var duration = double(format["duration"])
         if duration == nil || duration! <= 0 { duration = streamDuration }
-        return MediaInfo(formatName: format["format_name"] as? String ?? "", duration: duration, video: video, audio: audio)
+        var info = MediaInfo(formatName: format["format_name"] as? String ?? "", duration: duration, video: video, audio: audio)
+        info.startTime = double(format["start_time"])
+        return info
     }
 
     /// One-line plain description, e.g. "HEVC 10-bit · 3840×2160 · 29.97 fps (variable) · Opus 48 kHz".

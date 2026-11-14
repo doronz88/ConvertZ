@@ -117,7 +117,17 @@ public enum Prober {
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { throw MediaInfo.ParseError.notMedia }
         var info = try MediaInfo.parse(json: data)
-        if let video = info.video, let timing = measureTiming(file, stream: video.index, ffprobe: ffprobe) {
+        if let video = info.video, var timing = measureTiming(file, stream: video.index, ffprobe: ffprobe, wholeFile: false) {
+            // Video that looks good enough to copy untouched gets every frame checked first, not just the start.
+            var candidate = info
+            candidate.video?.measuredVariable = timing.variable
+            candidate.video?.timingCoversWholeFile = true
+            if !timing.variable, (info.duration ?? 0) > 110,
+               CommandBuilder.keepsVideo(preset: .premiereMP4, options: Options(), info: candidate) {
+                guard let full = measureTiming(file, stream: video.index, ffprobe: ffprobe, wholeFile: true) else { return info }
+                timing = full
+            }
+            info.video?.timingCoversWholeFile = true
             info.video?.measuredVariable = timing.variable
             // MKV/WebM headers carry a nominal rate, not the real average, so trust the measurement there.
             if info.formatName.contains("matroska") || info.formatName.contains("webm") || video.averageFrameRate == nil {
@@ -128,11 +138,11 @@ public enum Prober {
     }
 
     /// Reads the frame timestamps of the first two minutes (packet headers only, so it is quick).
-    static func measureTiming(_ file: URL, stream: Int, ffprobe: URL) -> FrameTiming? {
+    static func measureTiming(_ file: URL, stream: Int, ffprobe: URL, wholeFile: Bool) -> FrameTiming? {
         let process = Process()
         process.executableURL = ffprobe
-        process.arguments = ["-v", "error", "-select_streams", "\(stream)", "-read_intervals", "%+120",
-                             "-show_entries", "packet=pts_time", "-of", "csv=p=0", file.path]
+        process.arguments = ["-v", "error", "-select_streams", "\(stream)"] + (wholeFile ? [] : ["-read_intervals", "%+120"])
+            + ["-show_entries", "packet=pts_time", "-of", "csv=p=0", file.path]
         let out = Pipe()
         process.standardOutput = out
         process.standardError = FileHandle.nullDevice

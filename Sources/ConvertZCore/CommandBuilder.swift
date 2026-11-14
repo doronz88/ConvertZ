@@ -56,7 +56,7 @@ public enum CommandBuilder {
                 a += ["-c:a", depth == 24 ? "pcm_s24le" : "pcm_s16le"]
                 if options.wavSampleRate != 0 { a += ["-ar", "\(options.wavSampleRate)"] }
             case .m4a:
-                if options.keepCompatibleStreams, audio.codec == "aac" {
+                if options.keepCompatibleStreams, audio.codec == "aac", audio.profile == "LC" {
                     a += ["-c:a", "copy"]
                 } else {
                     a += ["-c:a", "aac", "-b:a", "\(aacBitrate(channels: audio.channels, stereo: 256))k"]
@@ -85,7 +85,6 @@ public enum CommandBuilder {
             a += ["-map", "0:a?", "-sn", "-dn", "-map_metadata", "0"]
             if keepsVideo(preset: preset, options: options, info: info) {
                 a += ["-c:v", "copy"]
-                if video.codec == "hevc" { a += ["-tag:v", "hvc1"] }
             } else {
                 a += ["-vf", filters(video, options, pixelFormat: "yuv420p")]
                 if options.encoder == .fast {
@@ -98,7 +97,7 @@ public enum CommandBuilder {
                 a += ["-pix_fmt", "yuv420p"]
             }
             if hasAudio {
-                if options.keepCompatibleStreams, info.audio.allSatisfy({ $0.codec == "aac" }) {
+                if options.keepCompatibleStreams, info.audio.allSatisfy(\.isPremiereSafeAAC) {
                     a += ["-c:a", "copy"]
                 } else {
                     let channels = info.audio.compactMap(\.channels).max()
@@ -148,16 +147,19 @@ public enum CommandBuilder {
         return stereo * n / 2
     }
 
-    /// True when Premiere-safe MP4 can pass the video through untouched: it is already in a form Premiere reads,
-    /// nothing asks for it to change, and something else about the file (container or audio) explains why it
-    /// needs converting. A file with no visible problem at all is re-encoded in full, since whatever is wrong
-    /// with it is hidden and a copy would carry it over.
+    /// True when Premiere-safe MP4 can pass the video through untouched. Importing cleanly comes first, so this
+    /// is deliberately strict; anything in doubt is re-encoded. The video must be 8-bit 4:2:0 H.264 whose frame
+    /// timestamps were measured across the whole file and found evenly spaced, starting at zero, with nothing
+    /// asking for it to change, and something else about the file (container or audio) must explain why it needs
+    /// converting. A file with no visible problem at all is re-encoded in full, since whatever is wrong with it
+    /// is hidden and a copy would carry it over.
     public static func keepsVideo(preset: Preset, options: Options, info: MediaInfo) -> Bool {
         guard preset == .premiereMP4, options.keepCompatibleStreams, let v = info.video else { return false }
-        guard v.codec == "h264" ? (v.bitDepth == 8 && v.is420) : (v.codec == "hevc" && v.is420) else { return false }
-        guard !v.isVariableFrameRate, !v.isInterlaced, v.width % 2 == 0, v.height % 2 == 0 else { return false }
+        guard v.codec == "h264", v.bitDepth == 8, v.is420 else { return false }
+        guard v.measuredVariable == false, v.timingCoversWholeFile, !v.isVariableFrameRate else { return false }
+        guard !v.isInterlaced, v.width % 2 == 0, v.height % 2 == 0 else { return false }
         guard options.frameRate == nil, options.maxHeight.map({ v.height <= $0 }) ?? true else { return false }
-        guard info.duration != nil else { return false }
+        guard info.duration != nil, abs(info.startTime ?? 0) < 0.05 else { return false }
         return !Diagnosis.issues(for: info).isEmpty
     }
 
